@@ -1,0 +1,29 @@
+{
+  "name": "@local/vbw-bundle",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual Browser Workspace (VBW) bundle for DeepSeek Harness 0.2.2-rc.1: a host plugin (@local/vbw-host) exposing vbw_* tools that proxy to the local VBW broker, a client-ui plugin (@local/vbw-client-ui) adding a sidebar tab that embeds the broker UI, and 5 vbw-* agent-preset roles. Additive only: no shipped row is overridden.",
+  "scripts": {
+    "validate": "node validate.mjs"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "AGENTS.md",
+    "validate.mjs",
+    "packages/*/package.json",
+    "packages/*/lib"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@local/vbw-host": "link:packages/vbw-host",
+    "@local/vbw-client-ui": "link:packages/vbw-client-ui"
+  },
+  "devDependencies": {
+    "yaml": "^2.6.1"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@local/vbw-host",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VBW host plugin: registers vbw_* tools (ctx.tools.register(defineTool(...))) that proxy over loopback HTTP to the local VBW broker; discovers the broker via _vbw/state/broker.json and spawns it when missing and autoSpawn is on. No hard npm dependencies: node builtins only, @deepseek-ai/dsh-tools is reused when resolvable with a local defineTool replica as fallback.",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

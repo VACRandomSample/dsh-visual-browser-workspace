@@ -1,0 +1,152 @@
+<!doctype html>
+<!--
+  VBW Visual Browser UI — index.html
+  =====================================================================
+  What this is:
+    Single-page front end for the VBW (Visual Browser Workspace) broker.
+    It renders a Playwright-driven browser session as a screenshot
+    <canvas>, forwards mouse/keyboard input to the broker, and implements
+    a full Annotate Mode (hover inspection, element select pins with
+    numbered comments, region screenshots, "send to orchestrator").
+  Serving:
+    Served statically by the VBW broker at /ui (and /ui/*). No build
+    step: plain HTML + CSS + vanilla ES modules. No external assets,
+    fonts or CDN references — everything is local.
+  Files:
+    /ui/index.html  this file (static layout only)
+    /ui/ui.css      styling (dark toolbar, panel layout)
+    /ui/app.js      all behavior (vanilla JS module)
+  API:
+    Consumes the broker REST API described in _vbw\specs\broker-api.md
+    (single source of truth): /health, /sessions, /sessions/:id,
+    /sessions/:id/input, /sessions/:id/frame.jpg, /sessions/:id/screenshot,
+    /sessions/:id/element-at, /sessions/:id/elements/resolve,
+    /sessions/:id/navigate|back|reload, /sessions/:id/lock|unlock,
+    /sessions/:id/annotations, /annotations/pending, /tests/run,
+    /tests/runs/:id, /ops/:id/cancel.
+  Layout:
+    #toolbar  — session picker, new-session URL, URL bar, mode switcher,
+                broker token, pending-annotation badge, health dot.
+    #stage    — letterboxed canvas + SVG overlay + hover tooltip.
+    #rail     — Annotations panel (pins, notes, send) and collapsible
+                Test Runner panel.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VBW Visual Browser</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/ui/ui.css">
+</head>
+<body>
+  <header id="toolbar">
+    <div class="brand" title="Visual Browser Workspace">VBW <span class="brand-sub">Visual Browser</span></div>
+
+    <span id="status-dot" class="dot down" role="img" aria-label="Broker status: down"></span>
+    <span id="status-text" class="muted">connecting…</span>
+
+    <div class="tb-group" title="Pick or create a browser session">
+      <label class="tb-label" for="session-select">Session</label>
+      <select id="session-select" aria-label="Session picker"><option value="">— no session —</option></select>
+      <input id="new-session-url" type="text" placeholder="start URL for new session (https://…)" aria-label="Start URL for new session" spellcheck="false">
+      <button id="btn-new-session" type="button">New session</button>
+    </div>
+
+    <div class="tb-group grow" title="Navigate the current session">
+      <button id="btn-back" type="button" title="Back" aria-label="Back">←</button>
+      <input id="url-bar" type="text" placeholder="https://…" aria-label="Page URL" spellcheck="false">
+      <button id="btn-go" type="button">Go</button>
+      <button id="btn-reload" type="button" title="Reload" aria-label="Reload">⟳</button>
+    </div>
+
+    <div class="tb-group" role="group" aria-label="Mode">
+      <button class="mode-btn" type="button" data-mode="browse" aria-pressed="true" title="Forward clicks, typing, scrolling to the remote page">Browse</button>
+      <button class="mode-btn" type="button" data-mode="hover" aria-pressed="false" title="Inspect the element under the cursor (no input forwarded)">Hover</button>
+      <button class="mode-btn" type="button" data-mode="select" aria-pressed="false" title="Click an element to pin it with a numbered comment">Select</button>
+      <button class="mode-btn" type="button" data-mode="region" aria-pressed="false" title="Drag a marquee to capture a region screenshot">Region</button>
+    </div>
+
+    <div class="tb-group" title="Broker bearer token (stored in localStorage vbw.brokerToken)">
+      <input id="token-input" type="password" placeholder="broker token" aria-label="Broker token">
+    </div>
+
+    <span id="pending-badge" class="badge" hidden title="Annotation groups awaiting the orchestrator (GET /annotations/pending)">pending: 0</span>
+  </header>
+
+  <div id="auth-hint" role="alert">Not authorized — the broker rejected the token (HTTP 401).
+    Paste the token from <code>_vbw\state\broker.json</code> into the token field.</div>
+
+  <main id="layout">
+    <section id="stage" aria-label="Remote browser view">
+      <div id="canvas-wrap">
+        <canvas id="frame" tabindex="0" role="img" aria-label="Remote browser viewport"></canvas>
+        <svg id="overlay" aria-hidden="true"></svg>
+        <div id="hover-tip" hidden></div>
+      </div>
+      <div id="stage-msg">
+        <p><strong>No frame yet.</strong></p>
+        <p>Pick a session above (or create one with a start URL). Frames stream from
+        <code>GET /sessions/:id/frame.jpg</code>.</p>
+      </div>
+      <div id="stage-hint">
+        <span data-for="browse">Browse — clicks/typing/scroll are forwarded to the real page.</span>
+        <span data-for="hover" hidden>Hover — inspect element metadata under the cursor, nothing is forwarded.</span>
+        <span data-for="select" hidden>Select — click an element to pin it with a numbered comment.</span>
+        <span data-for="region" hidden>Region — drag a rectangle to capture a region screenshot.</span>
+      </div>
+    </section>
+
+    <aside id="rail">
+      <section id="annotate-panel" class="panel" aria-label="Annotations">
+        <div class="panel-head">
+          <h2>Annotations</h2>
+          <span id="pin-count" class="muted">0 pins</span>
+        </div>
+        <div class="panel-body">
+          <label class="fld" for="ann-note">Group note (optional, sent as context.note)
+            <input id="ann-note" type="text" placeholder="what should the orchestrator do with these?" spellcheck="false">
+          </label>
+          <ol id="pin-list" aria-label="Pinned comments"></ol>
+          <p id="pin-empty" class="muted">No pins yet. Use <em>Select</em> or <em>Region</em> mode on the canvas.</p>
+          <div class="row-end">
+            <button id="btn-send" type="button" class="primary" title="POST /sessions/:id/annotations with all pins">Send to orchestrator</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="runner-panel" class="panel" aria-label="Test runner">
+        <button id="runner-toggle" type="button" aria-expanded="false" aria-controls="runner-body">
+          <span class="caret" aria-hidden="true">▸</span> Test Runner
+        </button>
+        <div id="runner-body" hidden>
+          <label class="fld" for="run-project">Project dir
+            <input id="run-project" type="text" value="_vbw\demo-app" spellcheck="false">
+          </label>
+          <label class="fld" for="run-filter">Filter (optional)
+            <input id="run-filter" type="text" placeholder="playwright grep" spellcheck="false">
+          </label>
+          <div class="row">
+            <button id="btn-run-tests" type="button" class="primary">Run</button>
+            <button id="btn-cancel-run" type="button" disabled>Cancel</button>
+            <span id="run-status" class="muted">idle</span>
+          </div>
+          <div id="run-counters" class="counters" hidden>
+            <span class="c pass">✓ <b id="c-pass">0</b></span>
+            <span class="c fail">✗ <b id="c-fail">0</b></span>
+            <span class="c flaky">~ <b id="c-flaky">0</b></span>
+            <span class="c skip">⤼ <b id="c-skip">0</b></span>
+            <span class="c muted" id="c-duration"></span>
+          </div>
+          <pre id="run-log" class="logtail" aria-label="Test run log tail"></pre>
+          <div id="run-report" class="muted"></div>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <div id="toasts" role="status" aria-live="polite"></div>
+
+  <script type="module" src="/ui/app.js"></script>
+</body>
+</html>

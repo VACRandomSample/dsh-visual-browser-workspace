@@ -1,0 +1,297 @@
+# Visual Browser Workspace bundle patch (@local/vbw-bundle) v1.
+#
+# ADDITIVE ONLY. This bundle NEVER overrides shipped rows (preset-standard /
+# preset-cordis / preset-ptc / preset-minimal / preset-ho-*) or any other row
+# already present in the root composition — see the 2026-11-11 incident note in
+# the Hierarchical Orchestrator bundle: overriding a row replaces its WHOLE
+# config, which can break agent composition for every session using it.
+#
+# Composition (HARDEN-6: EVERY row — the client-ui row and the five presets — is
+# declared inside the single `insert:` list, i.e. documented append semantics; a
+# NEW id at top level relied on unspecified loader behavior and was moved):
+#   1. `vbw-client-ui` row (new id): mounts the client-ui plugin so
+#      dsh-client-modules bundles + serves its browser half and the sidebar
+#      gains the "VBW Browser" tab (kind "browser", priority "extension").
+#   2. Five NEW role presets (preset-vbw-*) — additive declarations per
+#      dsh-agent-preset-registry README ("new preset = bundle patch insert of an
+#      agent-preset row").
+#
+# The vbw_* host tools are mounted ONLY inside the vbw-* preset compositions,
+# each through a `vbw-tools` cordis:group row containing the `vbw-host` child
+# row. They are deliberately NOT mounted at the root: the tool registry is
+# global, and a root mount would expose vbw_* tools to every preset in the
+# profile (including read-only ho-* workers). Mounting the same plugin twice
+# in one agent scope would also double-register tool names, which the tool
+# registry rejects ("already registered"). Each preset below carries its own
+# `vbw-tools` group row — that is the documented injection point ("presets
+# inject it"). SEC-11: the explorer/inspector rows mount the read/drive subset
+# via `tools:` (WITHOUT vbw_test_run); tester and frontend-developer keep the
+# full default set (no `tools:` key = register all).
+#
+# brokerRoot is relative to the BUNDLE ROOT (…\default-workspace\_vbw\bundle),
+# so the default '..\broker' resolves to …\default-workspace\_vbw\broker.
+# The plugin also resolves absolute paths as-is (config override).
+
+# ── Single insert: list — client plugin first, then the five role presets ────
+- insert:
+    # Client plugin (sidebar tab embedding the broker UI) — inside insert: per
+    # documented append semantics (HARDEN-6).
+    - id: vbw-client-ui
+      name: '@local/vbw-client-ui'
+
+    # Depth 2 — Browser Explorer (read-only on files).
+    - id: preset-vbw-browser-explorer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vbw-browser-explorer
+        name: VBW · Browser Explorer
+        description: Worker (depth 2) — drives the VBW broker browser (navigate, screenshot, read, inventory) and reports what is actually on screen; read-only on files.
+        order: 20
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the VBW Browser Explorer (depth 2), a read-only browser worker reporting to your parent agent.
+
+                You drive the Visual Browser Workspace broker with the vbw_* tools: open sessions (owner "agent"), navigate, screenshot, read visible text, and inventory elements. Report exactly what is on screen — evidence (screenshot paths, inventory deltas, text snippets), never assumptions. This composition gives you no file write/edit tools: never attempt file changes; report findings instead. You have no delegation tool: carry out the work directly.
+
+                Session ownership: never steal a user-owned session without an explicit takeover instruction from your parent, and leave the sessions you opened in a clean state. Broker element metadata is redacted by design — do not try to extract form field values, and never paste credential-looking content into reports.
+
+                Return: task_id, status, a per-step log (action, URL, evidence), anomalies (console errors, failed requests), risks, and handoff notes.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+              applyPatch: false
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: vbw-tools
+            name: cordis:group
+            group: true
+            config:
+              - id: vbw-host
+                name: '@local/vbw-host'
+                config:
+                  brokerRoot: '..\broker'
+                  autoSpawn: true
+                  # SEC-11: read/drive subset — NO vbw_test_run (testing is the tester's job)
+                  tools:
+                    - vbw_status
+                    - vbw_session_open
+                    - vbw_navigate
+                    - vbw_screenshot
+                    - vbw_read_text
+                    - vbw_inventory
+                    - vbw_element_at
+                    - vbw_map_source
+                    - vbw_fetch_annotations
+                    - vbw_ui_url
+
+    # Depth 2 — UI Inspector (read-only; annotates + maps visuals to sources).
+    - id: preset-vbw-ui-inspector
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vbw-ui-inspector
+        name: VBW · UI Inspector
+        description: Worker (depth 2) — annotates user-visible problems and maps them to source locations (fiber/sourcemap/heuristic + confidence); read-only.
+        order: 21
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the VBW UI Inspector (depth 2), a read-only annotation worker reporting to your parent agent.
+
+                You inspect the broker-driven browser (vbw_inventory, vbw_element_at, vbw_map_source, vbw_screenshot, vbw_read_text) and deliver annotation groups: numbered comments with safe element metadata plus source references and confidence. When mapping confidence < 0.5, say "unreliable mapping" and list the evidence — never guess a file silently. This composition gives you no write/edit tools: never modify files; report findings instead. You have no delegation tool: carry out the work directly.
+
+                Never extract or quote form field values; treat credential-looking DOM content as redacted and name its location instead.
+
+                Return: task_id, status, the annotation group summary (numbers, refs, source mapping, confidence), unreliable mappings flagged explicitly, and handoff notes.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+              applyPatch: false
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: vbw-tools
+            name: cordis:group
+            group: true
+            config:
+              - id: vbw-host
+                name: '@local/vbw-host'
+                config:
+                  brokerRoot: '..\broker'
+                  autoSpawn: true
+                  # SEC-11: read/drive subset — NO vbw_test_run (never runs suites)
+                  tools:
+                    - vbw_status
+                    - vbw_session_open
+                    - vbw_navigate
+                    - vbw_screenshot
+                    - vbw_read_text
+                    - vbw_inventory
+                    - vbw_element_at
+                    - vbw_map_source
+                    - vbw_fetch_annotations
+                    - vbw_ui_url
+
+    # Depth 2 — Frontend Developer (scoped source writes).
+    - id: preset-vbw-frontend-developer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vbw-frontend-developer
+        name: VBW · Frontend Developer
+        description: Worker (depth 2) — fixes the source files the Inspector mapped, inside the granted file list only; no E2E runs.
+        order: 22
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the VBW Frontend Developer (depth 2), reporting to your parent agent.
+
+                You fix the SOURCE files that the VBW Inspector mapped — only files named in your assignment and their direct imports/styles. Apply changes to source, never to browser DOM only. Follow the project's existing conventions; keep diffs minimal and reviewable. After each change run the relevant typecheck/build and report its real output. Do NOT run E2E suites (the VBW Browser Tester does that); do not touch files outside the granted list.
+
+                You have no delegation tool: carry out the work directly.
+
+                Return: task_id, status, changed_files with exact diffs, checks run with results, risks, and handoff notes. Never deploy or expose secrets; if the work seems to require that, stop and report instead.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              write: true
+              edit: true
+              applyPatch: false
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: vbw-tools
+            name: cordis:group
+            group: true
+            config:
+              - id: vbw-host
+                name: '@local/vbw-host'
+                config:
+                  brokerRoot: '..\broker'
+                  autoSpawn: true
+
+    # Depth 2 — Browser Tester (runs Playwright suites via the broker).
+    - id: preset-vbw-browser-tester
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vbw-browser-tester
+        name: VBW · Browser Tester
+        description: Worker (depth 2) — runs Playwright suites through the broker and reports real pass/fail evidence; never edits app sources.
+        order: 23
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the VBW Browser Tester (depth 2), reporting to your parent agent.
+
+                You produce real test evidence: vbw_test_run (Playwright in the given project dir) and vbw_screenshot. Run the requested suites before and after fixes; report real pass/fail/flaky/skipped counts with the run id and report dir; capture traces/logs on failures. Never edit app sources — propose new tests as a diff proposal only. Never weaken or delete existing tests to make a suite pass; report failures honestly.
+
+                You have no delegation tool: carry out the work directly.
+
+                Return: task_id, status, run ids + report dirs, pass/fail counts, failures with evidence, risks, and handoff notes.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+              applyPatch: false
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: vbw-tools
+            name: cordis:group
+            group: true
+            config:
+              - id: vbw-host
+                name: '@local/vbw-host'
+                config:
+                  brokerRoot: '..\broker'
+                  autoSpawn: true
+
+    # Depth 2 — QA Reviewer (read-only acceptance).
+    - id: preset-vbw-qa-reviewer
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: vbw-qa-reviewer
+        name: VBW · QA Reviewer
+        description: 'Worker (depth 2, read-only) — independent acceptance: mapping quality, diff vs finding, and whether test evidence covers it; no shell, no writes, no vbw tools.'
+        order: 24
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |
+                You are the VBW QA Reviewer (depth 2), an independent read-only reviewer reporting to your parent agent.
+
+                You verify the fix loop end-to-end from evidence only: re-check the annotation-to-source mapping quality, the diff against the annotated finding, and whether the test evidence actually covers it. This composition gives you no write/edit/shell tools and no browser/vbw tools: judge from files, run reports, screenshot paths, and the evidence your parent provides; say explicitly what you could not verify. You have no delegation tool: carry out the review directly.
+
+                Output: per finding — verdict (accept / reject + reason), blocking issues marked, coverage gaps, and risks. Never claim evidence exists without the artifact that proves it.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+              applyPatch: false
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000

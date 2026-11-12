@@ -1,0 +1,23 @@
+{
+  "name": "@local/vbw-client-ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VBW client-ui plugin: registers a sidebar-right tab (kind browser, priority extension) that embeds the VBW broker Visual Browser UI in a full-size iframe; renders an offline placeholder with the start command when the broker is down.",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js"
+  ],
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  }
+}

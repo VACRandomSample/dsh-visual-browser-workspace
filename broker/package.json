@@ -1,0 +1,14 @@
+{
+  "name": "vbw-broker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Visual Browser Workspace: local browser session broker (HTTP+WS) driving Playwright-controlled Chrome for the DeepSeek Harness demo.",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.65.0",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,16 @@
+# runtime state (never commit): tokens, captures, logs
+state/
+*.log
+.broker-state/
+
+# dependencies & builds
+node_modules/
+dist/
+test-results/
+html-report/
+.playwright/
+
+# local machine config
+.npmrc
+.DS_Store
+Thumbs.db
